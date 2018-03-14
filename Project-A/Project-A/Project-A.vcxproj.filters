@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Project-A.ino" />
+    <None Include="SideProduct.ino" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="lib\threads\ThreadController.h">

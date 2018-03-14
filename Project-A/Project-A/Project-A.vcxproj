@@ -50,7 +50,7 @@
       <AdditionalIncludeDirectories>$(ProjectDir)..\Project-A;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\libraries;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\arduino\avr\libraries;$(ProjectDir)..\..\..\..\..\Documents\Arduino\libraries;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\arduino\avr\cores\arduino;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\arduino\avr\variants\mega;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\tools\avr\avr\include\;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\tools\avr\avr\include\avr\;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\tools\avr\lib\gcc\avr\4.8.1\include;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\tools\avr\lib\gcc\avr\4.9.2\include;$(ProjectDir)..\..\..\..\..\Desktop\arduino-1.8.5\hardware\tools\avr\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(ProjectDir)__vm\.Project-A.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
-      <PreprocessorDefinitions>__AVR_ATmega2560__;F_CPU=16000000L;ARDUINO=10805;ARDUINO_AVR_ADK;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__AVR_ATmega2560__;_VMDEBUG=1;F_CPU=16000000L;ARDUINO=10805;ARDUINO_AVR_ADK;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -78,6 +78,9 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="Project-A.ino">
+      <FileType>CppCode</FileType>
+    </None>
+    <None Include="SideProduct.ino">
       <FileType>CppCode</FileType>
     </None>
   </ItemGroup>
