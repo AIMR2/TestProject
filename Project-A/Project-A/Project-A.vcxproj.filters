@@ -30,6 +30,12 @@
     <ClInclude Include="__vm\.Project-A.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lib\sodaq_ds3231\Sodaq_DS3231.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\emonlib\EmonLib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="lib\threads\Thread.cpp">
@@ -39,6 +45,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\sodaq_ds3231\Sodaq_DS3231.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\emonlib\EmonLib.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

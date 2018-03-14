@@ -6,6 +6,7 @@
 
 #include "lib\threads\Thread.h"
 #include "lib\lcd\LiquidCrystal.h"
+#include <Wire\src\Wire.h>
 
 Thread* lcdThread;
 LiquidCrystal lcd;
