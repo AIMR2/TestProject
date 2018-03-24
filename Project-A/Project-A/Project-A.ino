@@ -1,73 +1,48 @@
-/*
- Name:		Project_A.ino
- Created:	3/13/2018 6:29:22 PM
- Author:	Brandon Smith, and Ray Smith
-*/
+#include <Thread.h>
+#include <ThreadController.h>
 
-#include "lib\threads\Thread.h"
-#include "lib\lcd\LiquidCrystal.h"
-#include <Wire\src\Wire.h>
+// ThreadController that will controll all threads
+ThreadController controll = ThreadController();
 
-Thread* lcdThread;
-LiquidCrystal lcd;
+//My Thread (as a pointer)
+Thread* myThread = new Thread();
+//His Thread (not pointer)
+Thread hisThread = Thread();
 
-int lcdCounter = -1;
+// callback for myThread
+void niceCallback() {
+	Serial.print("COOL! I'm running on: ");
+	Serial.println(millis());
+}
 
-int batteryVoltage = 0;
-int batteryAC = 0;
+// callback for hisThread
+void boringCallback() {
+	Serial.println("BORING...");
+}
 
-// the setup function runs once when you press reset or power the board
-void setup() 
-{
+void setup() {
 	Serial.begin(9600);
-	// Initialize instance data
-	lcdThread = new Thread();
-	lcd = LiquidCrystal(12, 11, 5, 4, 3, 2);
-	lcd.begin(16, 2);
 
-	// Setup lcdThread
-	lcdThread->setInterval(5000);
-	lcdThread->enabled = true;
-	lcdThread->onRun(onLCDUpdate);
-	if (lcdThread->shouldRun())
-	{
-		lcdThread->run();
-	}
-	else
-	{
-		Serial.println("[Chip Thread | Critical Error]: Failed to open LCD Thread.");
-	}
+	// Configure myThread
+	myThread->onRun(niceCallback);
+	myThread->setInterval(500);
+
+	// Configure myThread
+	hisThread.onRun(boringCallback);
+	hisThread.setInterval(250);
+
+	// Adds both threads to the controller
+	controll.add(myThread);
+	controll.add(&hisThread); // & to pass the pointer to it
 }
 
-// the loop function runs over and over again until power down or reset
-void loop() 
-{
-  lcd.clear
-}
+void loop() {
+	// run ThreadController
+	// this will check every thread inside ThreadController,
+	// if it should run. If yes, he will run it;
+	controll.run();
 
-
-void onLCDUpdate()
-{
-	if (lcdCounter == -1)
-	{
-		lcd.setCursor(0, 0);
-		lcd.println("		Board Initializing...");
-		delay(500);
-		lcd.clear();
-
-		lcdCounter++;
-		onLCDUpdate();
-		return;
-	}
-
-	if (lcdCounter == 0)
-	{
-
-	}
-
-	lcdCounter++;
-	if (lcdCounter >= 5)
-	{
-		lcdCounter = 0;
-	}
+	// Rest of code
+	float h = 3.1415;
+	h /= 2;
 }

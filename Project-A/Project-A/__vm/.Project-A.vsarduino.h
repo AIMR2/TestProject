@@ -13,7 +13,6 @@
 #ifndef _VSARDUINO_H_
 #define _VSARDUINO_H_
 #define __AVR_ATmega2560__
-#define _VMDEBUG 1
 #define F_CPU 16000000L
 #define ARDUINO 10805
 #define ARDUINO_AVR_ADK
@@ -78,6 +77,7 @@ typedef unsigned char uint8_t;
 #define pgm_read_ptr(address_short)   short()
 
 #include "Project-A.ino"
+#include "Blah.ino"
 #include "SideProduct.ino"
 #endif
 #endif
