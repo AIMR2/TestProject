@@ -78,6 +78,7 @@ typedef unsigned char uint8_t;
 
 #include "Project-A.ino"
 #include "Blah.ino"
+#include "FinalProduct.ino"
 #include "SideProduct.ino"
 #endif
 #endif

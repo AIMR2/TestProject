@@ -80,6 +80,9 @@
     <None Include="Blah.ino">
       <FileType>CppCode</FileType>
     </None>
+    <None Include="FinalProduct.ino">
+      <FileType>CppCode</FileType>
+    </None>
     <None Include="Project-A.ino">
       <FileType>CppCode</FileType>
     </None>

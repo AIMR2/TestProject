@@ -432,6 +432,33 @@ void printScreen() {
 //send the power info to the ESP module through Serial1 (comma separated and starting with *)
 void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts) {
 
+	parameters[0] = DC_VOLT1;
+	parameters[1] = DC_VOLT2;
+	parameters[2] = CURRENT_CAL1;
+	parameters[3] = CURRENT_CAL2;
+	parameters[4] = CURRENT_CAL3;
+	parameters[5] = CURRENT_CAL4;
+	parameters[6] = VOLT_CAL1;
+	parameters[7] = VOLT_CAL2;
+	parameters[8] = 46;
+	parameters[9] = 46;
+	parameters[10] = 46;
+	parameters[11] = 46;
+	parameters[12] = 8;
+	parameters[13] = 8;
+	parameters[14] = 8;
+	parameters[15] = 8;
+	parameters[16] = 20;
+	parameters[17] = 6;
+	parameters[18] = 1000;
+	parameters[19] = now.month();
+	parameters[20] = now.date();
+	parameters[21] = now.dayOfWeek();
+	parameters[22] = now.year();
+	parameters[23] = now.hour();
+	parameters[24] = now.minute();
+	parameters[25] = now.second();
+
 	readValueB1 = analogRead(batPen1);
 	readValueB2 = analogRead(batPen2);
 	readValueC = analogRead(CloudsValue);
