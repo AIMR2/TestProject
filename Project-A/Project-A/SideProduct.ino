@@ -219,8 +219,6 @@ void loop(void)
 
 
 	//save the voltage, current, watts to the array for later averaging
-
-
 	amps1[counter] = emon1.Irms;
 	volts1[counter] = emon1.Vrms;
 	watts1[counter] = emon1.Vrms * emon1.Irms * 2;
