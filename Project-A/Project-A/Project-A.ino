@@ -9,26 +9,26 @@
 #include "EmonLib.h"
 
 
-#define SAMPLE1_COUNT 5
-#define SAMPLE_COUNT 5
-
 #pragma region Default Admin Configuration
-	#define DC_VOLT1 208.0
-	#define DC_VOLT2 208.0
-	#define VOLT_CAL1 120.0    //voltage calibration
-	#define VOLT_CAL2 120.0    //voltage calibration
-	#define CURRENT_CAL1 43.6 //sensor 1 calibration
-	#define CURRENT_CAL2 42.6 //sensor 2 calibration
+#define DC_VOLT1 228.0
+#define DC_VOLT2 228.0
+#define VOLT_CAL1 220.0    //voltage calibration
+#define VOLT_CAL2 220.0    //voltage calibration
+#define CURRENT_CAL1 43.6 //sensor 1 calibration,CT1,I Amps
+#define CURRENT_CAL2 42.6 //sensor 2 calibration,CT2,I Amps
 
-	#define CURRENT_CAL3 43.6 //sensor 1 calibration
-	#define CURRENT_CAL4 42.6 //sensor 2 calibration
+#define CURRENT_CAL3 43.6 //sensor 3 calibration,CT3,H Amps
+#define CURRENT_CAL4 42.6 //sensor 4 calibration,CT4,H Amps
 #pragma endregion
 
-#define UpdateDate false
-
 #pragma region Developer Configuration
-	String _VERSION = "2.0";
-	int pageSwitchSeconds = 3;
+String _VERSION = "2.0";
+int pageSwitchSeconds = 3;
+#define UpdateDate false
+#define IsDebugMode false
+
+#define SAMPLE1_COUNT 5
+#define SAMPLE_COUNT 5
 
 #define LOWEST_DC_VOLT1 100
 #define LOWEST_DC_VOLT2 100
@@ -86,26 +86,26 @@ Thread* calculationThread = new Thread();
 
 #pragma region PIN Instance Data
 
-const int currentPin1 = A2;
-const int currentPin2 = A1;
-const int voltagePin1 = A3;
-const int voltagePin2 = A0;
-const int currentPin3 = A8;
-const int currentPin4 = A9;
+const int currentPin1 = A15;//A2
+const int currentPin2 = A14;//A1
+const int voltagePin2 = A8;//A3
+const int voltagePin1 = A7;//A0
+const int currentPin3 = A13;//A8
+const int currentPin4 = A12;//A9
 
-int Relay1 = 22;
-int Relay2 = 24;
-int Relay3 = 26;
-int Relay4 = 28;
+int Relay1 = 35;//22
+int Relay2 = 37;//24
+int Relay3 = 39;//26
+int Relay4 = 41;//28
 int batPen1 = A10;
 int batPen2 = A11;
-float rainValue = A7;
-float CloudsValue = A6;
-
+float rainValue = A6;//A7
+float CloudsValue = A9;//A6
+					   //CLOCK A5,A4
+					   //23,25,27,29,31 buttons           
 #pragma endregion
 
 #pragma region Other Instance Data
-
 
 float Voltage1;
 float Voltage2;
@@ -119,14 +119,17 @@ int RainV = 0;
 int CloudsV = 0;
 
 double Amps = 0;
-
+//double VoltsL1;
+//double VoltsL2;// double Amps, double Watts, double Watts2
+double totalAmp;
+double totalAmp2;
+double totalWatt1;
+double totalWatt2;
 // counter to keep track of the current sample location
 int counter = 0;
 int counter1 = 0;
 bool relaysEnabled[] = { false, false, false, false };
 
-uint32_t old_ts;
-char weekDay[][4] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 #pragma endregion
 
 #pragma region DateTime Instance Data
@@ -135,25 +138,27 @@ char weekDay[][4] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 // Take care of week-day also.
 
 #if UpdateDate 
-DateTime dt(2018, 3, 11, 14, 22, 0, 7);
+DateTime dt(2018, 3, 29, 8, 39, 0, 4);
 #endif
 
 DateTime* now;
 
-double totalAmp;
-double totalAmp2;
-double totalWatt;
+//uint32_t old_ts;
+char weekDay[][4] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 
 #pragma endregion
-
+//The Ethernet shield allows you to connect a WizNet Ethernet controller to the Arduino or Genuino boards via the SPI bus.
+//It uses pins 10, 11, 12, and 13 for the SPI connection to the WizNet. Later models of the Ethernet shield also have an SD 
+//Card on board. Digital pin 4 is used to control the slave select pin on the SD card. 
 #pragma region Ethernet Instance Data
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
 byte mac[] = {
 	0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
-IPAddress ip(192, 168, 1, 177);
-
+//IPAddress ip(192, 168, 0, 30);
+IPAddress ip(76, 80, 34, 235);
+//76.80.34.235/
 // Initialize the Ethernet server library
 // with the IP address and port you want to use
 // (port 80 is default for HTTP):
@@ -163,11 +168,14 @@ EthernetServer server(80);
 #pragma region LCD Instance Data
 
 // Initiailze the LCD.
-LiquidCrystal lcd(36, 34, 44, 42, 40, 38);
-
+//LiquidCrystal lcd(36, 34, 44, 42, 40, 38);
+LiquidCrystal lcd(8, 9, 2, 5, 6, 7);
+//rs = 36, en = 34, d4 = 44, d5 = 42, d6 = 40, d7 = 38;
+//rs = 8, en = 9, d4 = 2, d5 = 5, d6 = 6, d7 = 7;
+//LiquidCrystal lcd(8,9,4,5,6,7);
 const int numOfInputs = 5;
 
-const int inputPins[numOfInputs] = { 23,25,27,29, 31 };
+const int inputPins[numOfInputs] = { 23,25,27,29,31 };//(23,greenB),(25,yellowF),(27,pink-) (29,blue+) (31jumper)(white is ground common)
 int inputState[numOfInputs];
 int lastInputState[numOfInputs] = { LOW,LOW,LOW,LOW };
 bool inputFlags[numOfInputs] = { LOW,LOW,LOW,LOW };
@@ -175,35 +183,36 @@ long lastDebounceTime[numOfInputs] = { 0,0,0,0 };
 long debounceDelay = 0;
 
 // LCD Menu Logic
-const int numOfScreens = 26;
+const int numOfScreens = 27;
 int currentScreen = 0;
 String screens[numOfScreens][2] = {
-	{ "Bat1 Volts","DC-Volts" },
-	{ "Bat2 Volts", "DC-Volts" },
-	{ "CT1 Calibrate","Amps" },
-	{ "CT2 Calibrate","Amps" },
-	{ "CT3 Calibrate","Amps" },
-	{ "CT4 Calibrate","Amps" },
-	{ "L1 AC Calibrate","AC-Volts" },
-	{ "L2 AC Calibrate","AC-Volts" },
-	{ "Relay 1 Volts","Volts" },
-	{ "Relay 2 Volts","Volts" },
-	{ "Relay 3 Volts","Volts" },
-	{ "Relay 4 Volts","Volts" },
-	{ "Relay 1 Amps","Amps" },
-	{ "Relay 2 Amps","Amps" },
-	{ "Relay 3 Amps","Amps" },
-	{ "Relay 4 Amps","Amps" },
-	{ "Stop Time", "Hour" },
-	{ "Start Time","Hour" },
-	{ "Rain Calibration", "" },
-	{ "Month","" },
-	{ "Day","" },
-	{ "Week Day","" },
-	{ "Year","" },
-	{ "Hours","" },
-	{ "Minutes","" },
-	{ "Seconds","" }
+	{ "Bat1 Volts",     "VDC" },
+{ "Bat2 Volts",     "VDC" },
+{ "CT1 Calibrate",    "Amps" },
+{ "CT2 Calibrate",    "Amps" },
+{ "CT3 Calibrate",    "Amps" },
+{ "CT4 Calibrate",    "Amps" },
+{ "L1 AC Calibrate",  "VAC" },
+{ "L2 AC Calibrate",  "VAC" },
+{ "Relay 1 Volts",    "Volts" },
+{ "Relay 2 Volts",    "Volts" },
+{ "Relay 3 Volts",    "Volts" },
+{ "Relay 4 Volts",    "Volts" },
+{ "Relay 1 Amps",   "Amps" },
+{ "Relay 2 Amps",   "Amps" },
+{ "Relay 3 Amps",   "Amps" },
+{ "Relay 4 Amps",   "Amps" },
+{ "Stop Time",      "Hours" },
+{ "Start Time",     "Hours" },
+{ "Rain Calibration", "" },
+{ "Cloud Calibration",  "" },
+{ "Month",        "" },
+{ "Day",        "" },
+{ "Week Day",     "" },
+{ "Year",       "" },
+{ "Hours",        "" },
+{ "Minutes",      "" },
+{ "Seconds",      "" }
 };
 int parameters[numOfScreens];
 
@@ -212,12 +221,12 @@ const int numOfScreens_nonAdmin = 7;
 int currentScreen_nonAdmin = 0;
 String screens_nonAdmin[numOfScreens][2] = {
 	{ "   Power Wall", "" }, // BLANK, and BLANK
-	{ "", "" }, // TIME, and DATE
-	{ "Bat Volt", "Watts" }, // Battery Voltage, and Inverter Amps
-	{ "I Amps", "H Amps" }, // Watts, and BLANK
-	{ "L1 Volts", "L2 Volts" }, // L1, L2
-	{ "Relay 1","Relay 2" }, // Relay 1 (ON OR OFF), Relay 2 (ON OR OFF)
-	{ "Relay 3","Relay 4" } // Relay 3(ON OR OFF), Relay 4 (ON OR OFF)
+{ "", "" }, // TIME, and DATE
+{ "Bat Volt", "Watts" }, // Battery Voltage, and Inverter Amps
+{ "I Amps", "H Amps" }, // Watts, and BLANK
+{ "L1 Volts", "L2 Volts" }, // L1, L2
+{ "Relay 1","Relay 2" }, // Relay 1 (ON OR OFF), Relay 2 (ON OR OFF)
+{ "Relay 3","Relay 4" } // Relay 3(ON OR OFF), Relay 4 (ON OR OFF)
 };
 
 String parameters_nonAdmin[numOfScreens_nonAdmin][2];
@@ -277,11 +286,12 @@ void renderLCD()
 		{
 			switch (i)
 			{
+
 			case 0:
 				parameters_nonAdmin[i][1] = "V" + _VERSION;
 				break;
 			case 1:
-				parameters_nonAdmin[i][0] = (String)(weekDay[now->dayOfWeek()]) +
+				parameters_nonAdmin[i][0] = (String)(weekDay[now->dayOfWeek() - 1]) +
 					" " +
 					String(now->hour()) + ":" + String(now->minute()) + ":" + String(now->second());
 
@@ -289,7 +299,7 @@ void renderLCD()
 				break;
 			case 2:
 				parameters_nonAdmin[i][0] = Voltage1; // Battery Voltage
-				parameters_nonAdmin[i][1] = totalWatt; // Total Watts
+				parameters_nonAdmin[i][1] = totalWatt1; // Total Watts
 				break;
 			case 3:
 				parameters_nonAdmin[i][0] = totalAmp; // Inverter Amps
@@ -326,27 +336,24 @@ void updateNetwork()
 void runCalculations()
 {
 	now = &rtc.now(); //get the current date-time
-	uint32_t ts = now->getEpoch();
 
-	if (old_ts == 0 || old_ts != ts) {
-		old_ts = ts;
-		Serial.print(now->hour(), DEC);
-		Serial.print(':');
-		Serial.print(now->minute(), DEC);
-		Serial.print(':');
-		Serial.print(now->second(), DEC);
-		Serial.print(' ');
-		Serial.print(weekDay[now->dayOfWeek()]);
-		Serial.print(' ');
-		Serial.print(now->month(), DEC);
-		Serial.print('/');
-		Serial.print(now->date(), DEC);
-		Serial.print('/');
-		Serial.print(now->year(), DEC);
-		Serial.print(' ');
+	Serial.print(now->hour(), DEC);
+	Serial.print(':');
+	Serial.print(now->minute(), DEC);
+	Serial.print(':');
+	Serial.print(now->second(), DEC);
+	Serial.print(' ');
+	Serial.print(weekDay[now->dayOfWeek() - 1]);
+	Serial.print(' ');
+	Serial.print(now->month(), DEC);
+	Serial.print('/');
+	Serial.print(now->date(), DEC);
+	Serial.print('/');
+	Serial.print(now->year(), DEC);
+	Serial.print(' ');
 
-		Serial.println();
-	}
+	Serial.println();
+	//}
 
 	// reset the var that keeps track of the number of samples taken 
 	// (loop back around to 0 on the array for our running total)
@@ -360,10 +367,10 @@ void runCalculations()
 	}
 
 	// calculate the most recent readings
-	emon1.calcVI(20, 5000);
-	emon2.calcVI(20, 5000);
-	emon3.calcVI(20, 5000);
-	emon4.calcVI(20, 5000);
+	emon1.calcVI(20, 2000);
+	emon2.calcVI(20, 2000);
+	emon3.calcVI(20, 2000);
+	emon4.calcVI(20, 2000);
 
 	// save the voltage, current, watts to the array for later averaging
 	amps1[counter] = emon1.Irms;
@@ -398,11 +405,11 @@ void runCalculations()
 		for (int i = 0; i < SAMPLE1_COUNT; i++)
 		{
 			wattAvg1 += watts1[i];
-			voltAvg1 += volts1[i] * 2;
+			voltAvg1 += volts1[i];
 			ampAvg1 += amps1[i];
 
 			wattAvg2 += watts2[i];
-			voltAvg2 += volts2[i] * 2;
+			voltAvg2 += volts2[i];
 			ampAvg2 += amps2[i];
 
 			ampAvg3 += amps3[i];
@@ -413,11 +420,11 @@ void runCalculations()
 	// get the final average by dividing by the # of samples
 	wattAvg1 /= SAMPLE_COUNT;
 	ampAvg1 /= SAMPLE_COUNT;
-	voltAvg1 /= SAMPLE_COUNT * 2;
+	voltAvg1 /= SAMPLE_COUNT;
 
 	wattAvg2 /= SAMPLE_COUNT;
 	ampAvg2 /= SAMPLE_COUNT;
-	voltAvg2 /= SAMPLE_COUNT * 2;
+	voltAvg2 /= SAMPLE_COUNT;
 
 	ampAvg3 /= SAMPLE1_COUNT;
 	ampAvg4 /= SAMPLE1_COUNT;
@@ -427,50 +434,55 @@ void runCalculations()
 	totalAmp = ampAvg1 + ampAvg2;
 	totalAmp2 = ampAvg3 + ampAvg4;
 
-	// totalWatt = wattAvg1 + wattAvg2;
+	totalWatt1 = wattAvg1;
+	totalWatt2 = wattAvg2;
 	// double totalvolt = voltAvg1 + voltAvg2;
 	// send the power info to the ESP module through Serial1
 
-	sendPowerInfo(voltAvg1, voltAvg2, totalAmp, totalWatt);
+
+	sendPowerInfo(voltAvg1, voltAvg2, totalAmp, totalWatt1, totalWatt2);
 }
 #pragma endregion
 
-
 void setup() {
 	Serial.begin(9600);
-
+	while (!Serial);
 	Wire.begin();
 	rtc.begin();
 	now = &rtc.now(); //get the current date-time
 
-#pragma region Initialize Energy Monitors
+#pragma region Initialize Parameter Values
+	parameters[0] = DC_VOLT1;
+	parameters[1] = DC_VOLT2;
+	parameters[2] = CURRENT_CAL1;
+	parameters[3] = CURRENT_CAL2;
+	parameters[4] = CURRENT_CAL3;
+	parameters[5] = CURRENT_CAL4;
+	parameters[6] = VOLT_CAL1;
+	parameters[7] = VOLT_CAL2;
+	parameters[8] = 4;
+	parameters[9] = 4;
+	parameters[10] = 46;
+	parameters[11] = 46;
+	parameters[12] = 8;
+	parameters[13] = 8;
+	parameters[14] = 8;
+	parameters[15] = 8;
+	parameters[16] = 20;
+	parameters[17] = 6;
+	parameters[18] = 200;
+	parameters[19] = 1200;
+	parameters[20] = now->month();
+	parameters[21] = now->date();
+	parameters[22] = now->dayOfWeek();
+	parameters[23] = now->year();
+	parameters[24] = now->hour();
+	parameters[25] = now->minute();
+	parameters[26] = now->second();
+#pragma endregion
 
-	parameters[0]		= DC_VOLT1;
-	parameters[1]		= DC_VOLT2;
-	parameters[2]		= CURRENT_CAL1;
-	parameters[3]		= CURRENT_CAL2;
-	parameters[4]		= CURRENT_CAL3;
-	parameters[5]		= CURRENT_CAL4;
-	parameters[6]		= VOLT_CAL1;
-	parameters[7]		= VOLT_CAL2;
-	parameters[8]		= 46;
-	parameters[9]		= 46;
-	parameters[10]		= 46;
-	parameters[11]		= 46;
-	parameters[12]		= 8;
-	parameters[13]		= 8;
-	parameters[14]		= 8;
-	parameters[15]		= 8;
-	parameters[16]		= 20;
-	parameters[17]		= 6;
-	parameters[18]		= 1000;
-	parameters[19]		= now->month();
-	parameters[20]		= now->date();
-	parameters[21]		= now->dayOfWeek();
-	parameters[22]		= now->year();
-	parameters[23]		= now->hour();
-	parameters[24]		= now->minute();
-	parameters[25]		= now->second();
+
+#pragma region Initialize Energy Monitors
 
 	emon1.voltage(voltagePin1, parameters[6], 1.7);  // Voltage: input pin, calibration, phase_shift
 	emon1.current(currentPin1, parameters[2]);       // Current: input pin, calibration.
@@ -492,7 +504,8 @@ void setup() {
 	pinMode(batPen2, INPUT);
 	pinMode(RainV, INPUT);
 	pinMode(CloudsV, INPUT);
-
+	pinMode(4, OUTPUT);
+	digitalWrite(4, HIGH);
 	for (int i = 0; i < numOfInputs; i++) {
 		pinMode(inputPins[i], INPUT);
 		digitalWrite(inputPins[i], HIGH); // pull-up 20k
@@ -501,7 +514,9 @@ void setup() {
 
 	lcd.begin(16, 2);
 
-
+#if UpdateDate
+	rtc.setDateTime(dt);
+#endif
 
 #pragma region Initialize Ethernet
 	Ethernet.begin(mac, ip);
@@ -535,6 +550,152 @@ void setup() {
 // Update the Threads, nothing else.
 void loop()
 {
+	// listen for incoming clients
+	EthernetClient client = server.available();
+	if (client) {
+		Serial.println("new client");
+		// an http request ends with a blank line
+		boolean currentLineIsBlank = true;
+		while (client.connected()) {
+			if (client.available()) {
+				char c = client.read();
+				Serial.write(c);
+				// if you've gotten to the end of the line (received a newline
+				// character) and the line is blank, the http request has ended,
+				// so you can send a reply
+				if (c == '\n' && currentLineIsBlank) {
+					// send a standard http response header
+					client.println("HTTP/1.1 200 OK");
+					client.println("Content-Type: text/html");
+					client.println("Connection: close");  // the connection will be closed after completion of the response
+					client.println("Refresh: 5");  // refresh the page automatically every 5 sec
+					client.println();
+					client.println("<!DOCTYPE HTML>");
+					client.println("<html>");
+					client.println("<body bgcolor=black text=lime link=gold vlink=gold alink=gold>");
+					// output the value of each analog input pin
+					for (int analogChannel = 0; analogChannel < 1; analogChannel++) {
+						// client.println("<br />");
+						now = &rtc.now(); //get the current date-time
+						client.print(now->hour(), DEC);
+						client.print(':');
+						client.print(now->minute(), DEC);
+						client.print(':');
+						client.print(now->second(), DEC);
+						client.print(' ');
+						client.print(weekDay[now->dayOfWeek() - 1]);
+						client.print(' ');
+						client.print(now->month(), DEC);
+						client.print('/');
+
+						client.print(now->date(), DEC);
+						client.print('/');
+
+						client.print(now->year(), DEC);
+
+						client.println(' ');
+						client.println(' ');
+						client.print(" | Bat1 Volt ");
+						client.print(Voltage1);
+						client.print(" | Bat2 Volt ");
+						client.print(Voltage2);
+						client.print(" | I_Amps ");
+						client.print(totalAmp);
+						client.print(" | H_Amps ");
+						client.print(totalAmp2);
+						client.print(" | Watts1 ");
+						client.print(totalWatt1);
+						client.print(" | Watts2 ");
+						client.print(totalWatt2);
+						client.print(" | Clouds ");
+						client.print(CloudsV);
+						client.print(" | Rain ");
+						client.print(RainV);
+						client.print(" | AC L1 ");
+						client.print(Volts1);
+						client.print(" | AC L2 ");
+						client.println(Volts2);
+						client.println("<br />");
+						client.println(' ');
+
+						client.print(" | DC_VOLT1 ");
+						client.print(parameters[0]);
+						client.print(" | DC_VOLT2 ");
+						client.print(parameters[1]);
+						client.print(" | CURRENT_CAL1 ");
+						client.print(parameters[2]);
+						client.print(" | CURRENT_CAL2 ");
+						client.print(parameters[3]);
+						client.print(" | CURRENT_CAL3 ");
+						client.print(parameters[4]);
+						client.print(" | CURRENT_CAL4 ");
+						client.print(parameters[5]);
+						client.print(" |VOLT_CAL1 ");
+						client.print(parameters[6]);
+						client.println(" | VOLT_CAL2 ");
+						client.println(' ');
+						client.println(parameters[7]);
+						client.print(" | r1 volt ");
+						client.print(parameters[8]);
+						client.print(" | r2 volt ");
+						client.print(parameters[9]);
+						client.print(" | r3 volt ");
+						client.print(parameters[10]);
+						client.print(" | r4 volt ");
+						client.print(parameters[11]);
+						client.print(" | r1 amp ");
+						client.print(parameters[12]);
+						client.print(" | r2 amp ");
+						client.print(parameters[13]);
+						client.print(" | r3 amp ");
+						client.print(parameters[14]);
+						client.print(" | r4 amp ");
+						client.print(parameters[15]);
+						client.print(" | stop time ");
+						client.print(parameters[16]);
+						client.print(" |start time ");
+						client.print(parameters[17]);
+						client.print(" | clouds ");
+						client.print(parameters[18]);
+						client.print(" | rain ");
+						client.println(' ');
+						client.println(parameters[19]);
+						client.print(" | month ");
+						client.print(parameters[20]);
+						client.print(" | date ");
+						client.print(parameters[21]);
+						client.print(" | dayOfWeek ");
+						client.print(parameters[22]);
+						client.print(" | year ");
+						client.print(parameters[23]);
+						client.print(" | hour ");
+						client.print(parameters[24]);
+						client.print(" | minute ");
+						client.print(parameters[25]);
+						client.print(" | second ");
+						client.println(parameters[26]);
+
+					}
+					client.println("</html>");
+					break;
+				}
+				if (c == '\n') {
+					// you're starting a new line
+					currentLineIsBlank = true;
+				}
+				else if (c != '\r') {
+					// you've gotten a character on the current line
+					currentLineIsBlank = false;
+				}
+			}
+		}
+		// give the web browser time to receive the data
+		delay(1);
+		// close the connection:
+		client.stop();
+		Serial.println("client disconnected");
+	}
+	//} 
 	controll.run();
 
 	setInputFlags();
@@ -564,8 +725,10 @@ void setStatusOfRelay(int relay, bool stat)
 	Serial.print(totalAmp);
 	Serial.print(" | H_Amps ");
 	Serial.print(totalAmp2);
-	Serial.print(" | Watts ");
-	Serial.print(totalWatt);
+	Serial.print(" | Watts1 ");
+	Serial.print(totalWatt1);
+	Serial.print(" | Watts2 ");
+	Serial.print(totalWatt2);
 	Serial.print(" | Clouds ");
 	Serial.print(CloudsV);
 	Serial.print(" | Rain ");
@@ -675,13 +838,13 @@ void inputAction(int input)
 			currentScreen--;
 		}
 
-		parameters[19] = now->month();
-		parameters[20] = now->date();
-		parameters[21] = now->dayOfWeek();
-		parameters[22] = now->year();
-		parameters[23] = now->hour();
-		parameters[24] = now->minute();
-		parameters[25] = now->second();
+		parameters[20] = now->month();
+		parameters[21] = now->date();
+		parameters[22] = now->dayOfWeek();
+		parameters[23] = now->year();
+		parameters[24] = now->hour();
+		parameters[25] = now->minute();
+		parameters[26] = now->second();
 	}
 	else if (input == 1)
 	{
@@ -693,13 +856,13 @@ void inputAction(int input)
 			currentScreen++;
 		}
 
-		parameters[19] = now->month();
-		parameters[20] = now->date();
-		parameters[21] = now->dayOfWeek();
-		parameters[22] = now->year();
-		parameters[23] = now->hour();
-		parameters[24] = now->minute();
-		parameters[25] = now->second();
+		parameters[20] = now->month();
+		parameters[21] = now->date();
+		parameters[22] = now->dayOfWeek();
+		parameters[23] = now->year();
+		parameters[24] = now->hour();
+		parameters[25] = now->minute();
+		parameters[26] = now->second();
 	}
 	else if (input == 2)
 	{
@@ -810,31 +973,28 @@ void parameterChange(int key)
 
 	// Skip 18 no limitations.
 
-	if (parameters[19] < 1)
-		parameters[19] = 12;
-	else if (parameters[19] > 12)
-		parameters[19] = 1;
+	// Skip 19, No limitations.
 
 	if (parameters[20] < 1)
-		parameters[20] = 31;
-	else if (parameters[20] > 31)
+		parameters[20] = 12;
+	else if (parameters[20] > 12)
 		parameters[20] = 1;
 
-	if (parameters[21] < 0)
-		parameters[21] = 6;
-	else if (parameters[21] > 6)
-		parameters[21] = 0;
+	if (parameters[21] < 1)
+		parameters[21] = 31;
+	else if (parameters[21] > 31)
+		parameters[21] = 1;
 
-	// Skip 22 no limitations.
+	if (parameters[22] < 1)
+		parameters[22] = 7;
+	else if (parameters[22] > 7)
+		parameters[22] = 1;
 
-	if (parameters[23] < 0)
-		parameters[23] = 24;
-	else if (parameters[23] > 24)
-		parameters[23] = 0;
+	// Skip 23 no limitations.
 
 	if (parameters[24] < 0)
-		parameters[24] = 60;
-	else if (parameters[24] > 60)
+		parameters[24] = 24;
+	else if (parameters[24] > 24)
 		parameters[24] = 0;
 
 	if (parameters[25] < 0)
@@ -842,16 +1002,18 @@ void parameterChange(int key)
 	else if (parameters[25] > 60)
 		parameters[25] = 0;
 
-	/*
-		This wouldn't work, because the rtc is updating the clock on the system.
-		If we remove rtc from updating, it will stop the clock and cause it to no longer work, and be very inaccurate.
+	if (parameters[26] < 0)
+		parameters[26] = 60;
+	else if (parameters[26] > 60)
+		parameters[26] = 0;
 
-		At the same time, if we removed the Ardiuno from the computer, the rtc will fail and cause the clock to malfunction.
-	*/
+	// Only update date and time, if in the screens for it.
+	if (currentScreen >= 19 && currentScreen <= 25)
+	{
+		DateTime newTimeSet(parameters[23], parameters[20], parameters[21], parameters[24], parameters[25], parameters[26], parameters[22]);
 
-	//now = &DateTime(parameters[22], parameters[19], parameters[20], parameters[23], parameters[24], parameters[25], parameters[21]);
-
-	//Serial.println("Date Updated...");
+		rtc.setDateTime(newTimeSet);
+	}
 
 	switch (currentScreen)
 	{
@@ -878,6 +1040,7 @@ void parameterChange(int key)
 	}
 }
 
+
 void printScreen()
 {
 	lcd.clear();
@@ -885,36 +1048,82 @@ void printScreen()
 	{
 		lcd.print(screens[currentScreen][0]);
 		lcd.setCursor(0, 1);
-		if (currentScreen == 21)
-			lcd.print(weekDay[parameters[currentScreen]]);
+
+		if (currentScreen == 22)
+			lcd.print(weekDay[parameters[currentScreen] - 1]);
 		else
 			lcd.print(parameters[currentScreen]);
+
 		lcd.print(" ");
+
 		lcd.print(screens[currentScreen][1]);
+
+		lcd.print(" ");
+
+		if (currentScreen == 0)
+			lcd.print(Voltage1);
+		else if (currentScreen == 1)
+			lcd.print(Voltage2);
+		else if (currentScreen == 2)
+			lcd.print(totalAmp);
+		else if (currentScreen == 3)
+			lcd.print(totalAmp);
+		else if (currentScreen == 4)
+			lcd.print(totalAmp2);
+		else if (currentScreen == 5)
+			lcd.print(totalAmp2);
+		else if (currentScreen == 6)
+			lcd.print(Volts1);
+		else if (currentScreen == 7)
+			lcd.print(Volts2);
+		else if (currentScreen == 8)
+			lcd.print(Voltage1);
+		else if (currentScreen == 9)
+			lcd.print(Voltage1);
+		else if (currentScreen == 10)
+			lcd.print(Voltage1);
+		else if (currentScreen == 11)
+			lcd.print(Voltage1);
+		else if (currentScreen == 12)
+			lcd.print(totalAmp);
+		else if (currentScreen == 13)
+			lcd.print(totalAmp);
+		else if (currentScreen == 14)
+			lcd.print(totalAmp);
+		else if (currentScreen == 15)
+			lcd.print(totalAmp);
+		else if (currentScreen == 16)
+			lcd.print(now->hour());
+		else if (currentScreen == 17)
+			lcd.print(now->hour());
+		else if (currentScreen == 18)
+			lcd.print(RainV);
+		else if (currentScreen == 19)
+			lcd.print(CloudsV);
 	}
 	else
 	{
 		for (auto i = (int)
-			((String(parameters_nonAdmin[currentScreen_nonAdmin][0]).length() + String(screens_nonAdmin[currentScreen_nonAdmin][0]).length() + 1)*2);
+			((String(parameters_nonAdmin[currentScreen_nonAdmin][0]).length() + String(screens_nonAdmin[currentScreen_nonAdmin][0]).length() + 1) * 2);
 			i < 16; i++)
 		{
 			lcd.print(" ");
 		}
 		lcd.print(screens_nonAdmin[currentScreen_nonAdmin][0]);
 		lcd.print(screens_nonAdmin[currentScreen_nonAdmin][0] == "" ? "" : " ");
-		
+
 		lcd.print(parameters_nonAdmin[currentScreen_nonAdmin][0]);
 
-		lcd.setCursor(0, 1); 
+		lcd.setCursor(0, 1);
 		for (auto i = (int)
-			((String(parameters_nonAdmin[currentScreen_nonAdmin][1]).length() + String(screens_nonAdmin[currentScreen_nonAdmin][1]).length() + 1)*2);
+			((String(parameters_nonAdmin[currentScreen_nonAdmin][1]).length() + String(screens_nonAdmin[currentScreen_nonAdmin][1]).length() + 1) * 2);
 			i < 16; i++)
 		{
 			lcd.print(" ");
 		}
 		lcd.print(screens_nonAdmin[currentScreen_nonAdmin][1]);
 		lcd.print(screens_nonAdmin[currentScreen_nonAdmin][1] == "" ? "" : " ");
-		
+
 		lcd.print(parameters_nonAdmin[currentScreen_nonAdmin][1]);
 	}
 }
@@ -922,8 +1131,9 @@ void printScreen()
 
 //--------------------------------------------------
 // send the power info to the ESP module through Serial1 (comma separated and starting with *)
-void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
+void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts, double Watts2)
 {
+
 	readValueB1 = analogRead(batPen1);
 	readValueB2 = analogRead(batPen2);
 	readValueC = analogRead(CloudsValue);
@@ -936,12 +1146,12 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 	Volts2 = VoltsL2;
 
 	// Stops operation, if the Clouds value is too high.
-	/*if (CloudsV <= 100)
+	if (CloudsV >= parameters[19] && now->hour() < parameters[16])
 	{
 		Serial.println("Ouch, it burns, I don't like the sun!");
 		setStatusOfRelay(0, false);
 		return;
-	}*/
+	}
 
 	// Stops operation, if its raining.
 	if (RainV <= parameters[18])
@@ -957,9 +1167,9 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 		setStatusOfRelay(0, false);
 	}
 	// Allow to turn during Start Time.
-	else if(now->hour() >= parameters[17])
+	else if (now->hour() >= parameters[17])
 	{
-		if (((Amps)< parameters[12]) && (Voltage1) < parameters[8])
+		if (((Amps)< parameters[12]) && (Voltage1) > parameters[8])
 		{
 			setStatusOfRelay(1, true);
 		}
@@ -968,7 +1178,7 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 			setStatusOfRelay(1, false);
 		}
 
-		if (((Amps)< parameters[13]) && (Voltage1) < parameters[9])
+		if (((Amps)< parameters[13]) && (Voltage1) > parameters[9])
 		{
 			setStatusOfRelay(2, true);
 		}
@@ -977,7 +1187,7 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 			setStatusOfRelay(2, false);
 		}
 
-		if (((Amps)< parameters[14]) && (Voltage1) < parameters[10])
+		if (((Amps)< parameters[14]) && (Voltage1) > parameters[10])
 		{
 			setStatusOfRelay(3, true);
 		}
@@ -986,7 +1196,7 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 			setStatusOfRelay(3, false);
 		}
 
-		if (((Amps)< parameters[15]) && (Voltage1) < parameters[11])
+		if (((Amps)< parameters[15]) && (Voltage1) > parameters[11])
 		{
 			setStatusOfRelay(4, true);
 		}
@@ -999,5 +1209,7 @@ void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts)
 	else
 	{
 		setStatusOfRelay(0, false);
+
 	}
 }
+

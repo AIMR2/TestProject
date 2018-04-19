@@ -1,689 +1,419 @@
+/* ************************************************************************
+* ***                    Super Graphing Data Logger                    ***
+* ************************************************************************
+* Everett Robinson, December 2016. More at: http://everettsprojects.com
+*
+* This sketch relies on the SD and ethernet libraries in arduino 1.0 or newer.
+* The following extra non standard libraries were also used, and will need to
+* be added to the libraries folder:
+* - Time: http://playground.arduino.cc/Code/Time
+* - EEPROMAnything: http://playground.arduino.cc/Code/EEPROMWriteAnything
+*
+* If this is your first time setting up this project, please go get the
+* EEPROM_config sketch from http://everettsprojects.com so that you can
+* configure the config struct in the EEPROM memory. Usage of the EEPROM
+* is needed to make the project resiliant against a temporary loss of power.
+*
+* You must also ensure that you have the HC.htm file in the root directory
+* of your SD card, as well as a data directory where the datafiles will be
+* stored.
+*
+* This sketch combines the functionality of an existing fileserver example
+* which can be found at http://www.ladyada.net/learn/arduino/ethfiles.html
+* with the Datalogger example that comes with the new SD library from 1.0,
+* as well as some code from the UdpNtpClient example that cones with the
+* ethernet library.
+*
+* Added to all of these are some tricks to make it manage and serve up the
+* datafiles in conjunction with a page which uses highcharts JS to graph it.
+* This is basically accomplished using the arduino by itself. Because I
+* actually host the highcharts.js files externally, this is true more in
+* theory than in actual practice, but oh well. It should work just fine to
+* have the highcharts.js file on the arduino's SD card, though loading the
+* page will be painfully slow.
+*
+* Some of the code this was derived from may or may not be under a GPL
+* licence; I'm not entirely sure. I suppose anyone using this should treat
+* it like it is too, but I don't really care too much.
+* Also if one intends to use this for commercial applications, it may be
+* necessary to purchase a license for Highcharts.
+*
+*/
 
-#include <SPI.h>
+#include <SD.h>
 #include <Ethernet.h>
-#include <Wire.h>
-#include <LiquidCrystal.h>
-#include "Sodaq_DS3231.h"
-#include "EmonLib.h"
+#include <EthernetUdp.h>
+#include <SPI.h>
+#include <string.h>
+#include <Time.h>
+#include <EEPROM.h>
+#include <EEPROMAnything.h>
+#include <avr/pgmspace.h>
 
-#define SAMPLE1_COUNT 5
-#define SAMPLE_COUNT 5
-#define VOLT_CAL1 120.0    //voltage calibration
-#define VOLT_CAL2 120.0    //voltage calibration
-#define CURRENT_CAL1 43.6 //sensor 1 calibration
-#define CURRENT_CAL2 42.6 //sensor 2 calibration
-
-#define CURRENT_CAL3 43.6 //sensor 1 calibration
-#define CURRENT_CAL4 42.6 //sensor 2 calibration
-const int currentPin1 = A2;
-const int currentPin2 = A1;
-const int voltagePin1 = A3;
-const int voltagePin2 = A0;
-const int currentPin3 = A8;
-const int currentPin4 = A9;
-
-
-//A4,A5 CLOCK
-int Relay1 = 22;
-int Relay2 = 24;
-int Relay3 = 26;
-int Relay4 = 28;//
-int batPen1 = A10;
-int batPen2 = A11;
-int RainV = 0;
-int CloudsV = 0;
-float rainValue = A7;
-float CloudsValue = A6;
-float Voltage1;
-float Voltage2;
-double Volts1;
-double Volts2;
-int readValueB1;
-int readValueB2;
-int readValueC;
-int readValueR;
-//counter to keep track of the current sample location
-int counter = 0;
-int counter1 = 0;
-bool relaysEnabled[] = { false, false, false, false };
-
-//year, month, date, hour, min, sec and week-day(starts from 0 and goes to 6)
-//writing any non-existent time-data may interfere with normal operation of the RTC.
-//Take care of week-day also.
-//DateTime dt(2018, 3, 11, 14, 22, 0, 7);
-DateTime now;
-double totalAmp;
-double totalAmp2;
-double totalWatt;
-
-// Enter a MAC address and IP address for your controller below.
-// The IP address will be dependent on your local network:
-byte mac[] = {
-	0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
-};
-IPAddress ip(192, 168, 1, 177);
-
-// Initialize the Ethernet server library
-// with the IP address and port you want to use
-// (port 80 is default for HTTP):
+/************ ETHERNET STUFF ************/
+byte mac[] = { 0x90, 0xA2, 0xDA, 0x00, 0x4C, 0x64 };
+//byte ip[] = { 192,168,1, 100 };
 EthernetServer server(80);
-//relay pins{2, 3, 4, 5, 6, 7, 8, 9, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-//35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53};
-// initialize the library by providing the nuber of pins to it
-//LiquidCrystal lcd(8,9,4,5,6,7);//lcd with buttons
 
-//LiquidCrystal lcd(12, 11, 5, 4, 3, 2);//LCD NO BUTTONS
-//LiquidCrystal lcd(36, 34, 41, 39, 37, 35);//LCD NO BUTTONS
-//LiquidCrystal lcd(36, 34, 44, 42, 40, 38);//LCD NO BUTTONS
-//const int rs = 36, en = 34, d4 = 48, d5 = 44, d6 = 42, d7 = 40;
-//const int rs = 36, en = 34, d4 = 44, d5 = 42, d6 = 40, d7 = 38;
-//LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
-LiquidCrystal lcd(36, 34, 44, 42, 40, 38);
-//Ethernet 4,10,11,12,13
-//Relays 2,11,12,13
-//-------------------------------------------
-const int numOfInputs = 4;
+/************** NTP STUFF ***************/
+unsigned int localPort = 8888;          // local port to listen for UDP packets
+IPAddress timeServer(128, 138, 140, 44);//NIST time server IP address: for more info
+										//see http://tf.nist.gov/tf-cgi/servers.cgi
 
-const int inputPins[numOfInputs] = { 23,25,27,29 };
-int inputState[numOfInputs];
-int lastInputState[numOfInputs] = { LOW,LOW,LOW,LOW };
-bool inputFlags[numOfInputs] = { LOW,LOW,LOW,LOW };
-long lastDebounceTime[numOfInputs] = { 0,0,0,0 };
-long debounceDelay = 5;
+const int NTP_PACKET_SIZE = 48; //NTP time stamp is in the first 48 bytes of the message
+byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets 
+EthernetUDP Udp;
 
-//LCD Menu Logic
-const int numOfScreens = 10;
-int currentScreen = 0;
-String screens[numOfScreens][2] = { { "Bat1 Volts","DC-Volts" },{ "Bat2 Volts", "DC-Volts" },
-{ "CT1 Calibrate","Amps" },{ "CT2 Calibrate","Amps" },{ "CT3 Calibrate","Amps" },{ "CT4 Calibrate","Amps" },
-{ "L1 AC Calibrate","AC-Volts" },{ "L2 AC Calibrate","AC-Volts" },{ "Stop Time", "Hour" },{ "Start Time","Hour" } };
-int parameters[numOfScreens];
-//-------------------------------------------------------------------
-//create 2 instances of the energy monitor lib
-EnergyMonitor emon1;
-EnergyMonitor emon2;
+/*** DATA LOGGER AND TIMER CONTROLS ****/
+const int analogPin = 0;
+unsigned long lastIntervalTime = 0; //The time the last measurement occured.
+#define MEASURE_INTERVAL 600000     //10 minute intervals between measurements (in ms)
+unsigned long newFileTime;          //The time at which we should create a new week's file
+#define FILE_INTERVAL 604800        //One week worth of seconds
 
-EnergyMonitor emon3;
-EnergyMonitor emon4;
+									//A structure that stores file config variables from EEPROM
+typedef struct {
+	unsigned long newFileTime;      //Keeps track of when a newfile should be made.
+	char workingFilename[19];       //The path and filename of the current week's file
+} configuration;
 
-//arrays to hold the sample data
-
-double volts1[SAMPLE_COUNT];
-double amps1[SAMPLE_COUNT];
-double watts1[SAMPLE_COUNT];
-
-double volts2[SAMPLE_COUNT];
-double amps2[SAMPLE_COUNT];
-double watts2[SAMPLE_COUNT];
+configuration config;               //Actually make our config struct
 
 
-double amps3[SAMPLE1_COUNT];
-double amps4[SAMPLE1_COUNT];
+									// Strings stored in flash mem for the Html Header (saves ram)
+const char HeaderOK_0[] PROGMEM = "HTTP/1.1 200 OK";            //
+const char HeaderOK_1[] PROGMEM = "Content-Type: text/html";    //
+const char HeaderOK_2[] PROGMEM = "";                           //
+
+																// A table of pointers to the flash memory strings for the header
+const char* const HeaderOK_table[] PROGMEM = {
+	HeaderOK_0,
+	HeaderOK_1,
+	HeaderOK_2
+};
+
+// A function for reasy printing of the headers  
+void HtmlHeaderOK(EthernetClient client) {
+
+	char buffer[30]; //A character array to hold the strings from the flash mem
+
+	for (int i = 0; i < 3; i++) {
+		strcpy_P(buffer, (char*)pgm_read_word(&(HeaderOK_table[i])));
+		client.println(buffer);
+	}
+}
 
 
-void setup(void)
-{
+// Strings stored in flash mem for the Html 404 Header
+const prog_char Header404_0[] PROGMEM = "HTTP/1.1 404 Not Found";     //
+const prog_char Header404_1[] PROGMEM = "Content-Type: text/html";    //
+const prog_char Header404_2[] PROGMEM = "";                           //
+const prog_char Header404_3[] PROGMEM = "<h2>File Not Found!</h2>";
+
+// A table of pointers to the flash memory strings for the header
+const char* const Header404_table[] PROGMEM = {
+	Header404_0,
+	Header404_1,
+	Header404_2,
+	Header404_3
+};
+
+// Easy peasy 404 header function
+void HtmlHeader404(EthernetClient client) {
+
+	char buffer[30]; //A character array to hold the strings from the flash mem
+
+	for (int i = 0; i < 4; i++) {
+		strcpy_P(buffer, (char*)pgm_read_word(&(Header404_table[i])));
+		client.println(buffer);
+	}
+}
+
+
+void setup() {
 	Serial.begin(9600);
 
-	Wire.begin();
-	rtc.begin();
-	//rtc.setDateTime(dt);
+	pinMode(10, OUTPUT);          // set the SS pin as an output (necessary!)
+	digitalWrite(10, HIGH);       // but turn off the W5100 chip! 
 
-
-	emon1.voltage(voltagePin1, VOLT_CAL1, 1.7);  // Voltage: input pin, calibration, phase_shift
-	emon1.current(currentPin1, CURRENT_CAL1);       // Current: input pin, calibration.
-
-	emon2.voltage(voltagePin2, VOLT_CAL2, 1.7);  // Voltage: input pin, calibration, phase_shift
-	emon2.current(currentPin2, CURRENT_CAL2);       // Current: input pin, calibration.
-
-	emon3.current(currentPin3, CURRENT_CAL3);       // Current: input pin, calibration.
-	emon4.current(currentPin4, CURRENT_CAL4);       // Current: input pin, calibration.
-	
-	pinMode(Relay1, OUTPUT);
-	pinMode(Relay2, OUTPUT);
-	pinMode(Relay3, OUTPUT);
-	pinMode(Relay4, OUTPUT);
-	pinMode(batPen1, INPUT);
-	pinMode(batPen2, INPUT);
-
-
-	//----------------------------------------------
-	for (int i = 0; i < numOfInputs; i++) {
-		pinMode(inputPins[i], INPUT);
-		digitalWrite(inputPins[i], HIGH); // pull-up 20k
+								  // see if the card is present and can be initialized:
+	if (!SD.begin(4)) {
+		//Serial.println("Card failed, or not present");
+		// don't do anything more:
+		return;
 	}
-	//---------------------------------------------
+	//Serial.println("card initialized.");
 
-	pinMode(RainV, INPUT);
-	pinMode(CloudsV, INPUT);
-	//}
-	while (!Serial) {
-		; // wait for serial port to connect. Needed for native USB port only
+	// The SD card is working, start the server and ethernet related stuff!
+	if (Ethernet.begin(mac) == 0) {
+		//Serial.println("Failed to configure Ethernet using DHCP");
+		// don't do anything more:
+		return;
 	}
+	//Serial.println("DHCP configured!");
 
-	lcd.begin(16, 2);
-
-	// start the Ethernet connection and the server:
-	Ethernet.begin(mac, ip);
 	server.begin();
-	Serial.print("server is at ");
-	Serial.println(Ethernet.localIP()); 
-	
+	Udp.begin(localPort);
+	EEPROM_readAnything(0, config); // make sure our config struct is syncd with EEPROM
 }
 
-uint32_t old_ts;
-char weekDay[][4] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-void loop(void)
-{
+// A function that takes care of the listing of files for the
+// main page one sees when they first connect to the arduino.
+// it only lists the files in the /data/ folder. Make sure this
+// exists on your SD card.
+void ListFiles(EthernetClient client) {
 
-	now = rtc.now(); //get the current date-time
-	uint32_t ts = now.getEpoch();
+	File workingDir = SD.open("/data/");
 
-	if (old_ts == 0 || old_ts != ts) {
-		old_ts = ts;
-		Serial.print(now.hour(), DEC);
-		Serial.print(':');
-		Serial.print(now.minute(), DEC);
-		Serial.print(':');
-		Serial.print(now.second(), DEC);
-		Serial.print(' ');
-		Serial.print(weekDay[now.dayOfWeek()]);
-		Serial.print(' ');
-		Serial.print(now.month(), DEC);
-		Serial.print('/');
-		Serial.print(now.date(), DEC);
-		Serial.print('/');
-		Serial.print(now.year(), DEC);
-		Serial.print(' ');
+	client.println("<ul>");
 
-
-		Serial.println();
-
-	}
-	//reset the var that keeps track of the number of samples taken 
-	//(loop back around to 0 on the array for our running total)
-	if (counter >= SAMPLE_COUNT)
-	{
-		counter = 0;
-	}
-	if (counter1 >= SAMPLE1_COUNT)
-	{
-		counter1 = 0;
-	}
-
-	//calculate the most recent readings
-	emon1.calcVI(20, 5000);
-	emon2.calcVI(20, 5000);
-	emon3.calcVI(20, 5000);
-	emon4.calcVI(20, 5000);
-
-
-	//save the voltage, current, watts to the array for later averaging
-	amps1[counter] = emon1.Irms;
-	volts1[counter] = emon1.Vrms;
-	watts1[counter] = emon1.Vrms * emon1.Irms * 2;
-
-	amps2[counter] = emon2.Irms;
-	volts2[counter] = emon2.Vrms;
-	watts2[counter] = emon2.Vrms * emon2.Irms * 2;
-
-	amps3[counter1] = emon3.Irms;
-	amps4[counter1] = emon4.Irms;
-
-	counter1++;
-	counter++;
-
-
-	//setup the vars to be averaged
-
-	double wattAvg1 = 0;
-	double voltAvg1 = 0;
-	double ampAvg1 = 0;
-
-	double wattAvg2 = 0;
-	double voltAvg2 = 0;
-	double ampAvg2 = 0;
-
-	double ampAvg3 = 0;
-	double ampAvg4 = 0;
-
-
-
-	//add em up for averaging
-	for (int i = 0; i < SAMPLE_COUNT; i++)
-	{
-		for (int i = 0; i < SAMPLE1_COUNT; i++)
-		{
-			wattAvg1 += watts1[i];
-			voltAvg1 += volts1[i] * 2;
-			ampAvg1 += amps1[i];
-
-			wattAvg2 += watts2[i];
-			voltAvg2 += volts2[i] * 2;
-			ampAvg2 += amps2[i];
-
-			ampAvg3 += amps3[i];
-			ampAvg4 += amps4[i];
+	while (true) {
+		File entry = workingDir.openNextFile();
+		if (!entry) {
+			break;
 		}
+		client.print("<li><a href=\"/HC.htm?file=");
+		client.print(entry.name());
+		client.print("\">");
+		client.print(entry.name());
+		client.println("</a></li>");
+		entry.close();
 	}
-	//get the final average by dividing by the # of samples
-	wattAvg1 /= SAMPLE_COUNT;
-	ampAvg1 /= SAMPLE_COUNT;
-	voltAvg1 /= SAMPLE_COUNT * 2;
-
-	wattAvg2 /= SAMPLE_COUNT;
-	ampAvg2 /= SAMPLE_COUNT;
-	voltAvg2 /= SAMPLE_COUNT * 2;
-
-	ampAvg3 /= SAMPLE1_COUNT;
-	ampAvg4 /= SAMPLE1_COUNT;
-
-
-	//calculate the total amps and watts
-	totalAmp = ampAvg1 + ampAvg2;
-	totalAmp2 = ampAvg3 + ampAvg4;
-	//totalWatt = wattAvg1 + wattAvg2;
-	//double totalvolt = voltAvg1 + voltAvg2;
-	//send the power info to the ESP module through Serial1
-	sendPowerInfo(voltAvg1, voltAvg2, totalAmp, totalWatt);
-
-	setInputFlags();
-	resolveInputFlags();
-	////delay(1000);
+	client.println("</ul>");
+	workingDir.close();
 }
 
-void setStatusOfRelay(int relay, bool stat)
-{
-	Serial.print("Relay ");
-	if (relay != 0)
-	{
-		Serial.print(relay);
-	}
-	else
-	{
-		Serial.print("ALL");
-	}
-	Serial.print((stat ? " ON" : " OFF"));
-	Serial.print(" | Bat1 Volt ");
-	Serial.print(Voltage1);
-	Serial.print(" | Bat2 Volt ");
-	Serial.print(Voltage2);
-	Serial.print(" | I_Amps ");
-	Serial.print(totalAmp);
-	Serial.print(" | H_Amps ");
-	Serial.print(totalAmp2);
-	Serial.print(" | Watts ");
-	Serial.print(totalWatt);
-	Serial.print(" | Clouds ");
-	Serial.print(CloudsV);
-	Serial.print(" | Rain ");
-	Serial.print(RainV);
-	Serial.print(" | AC L1 ");
-	Serial.print(Volts1);
-	Serial.print(" | AC L2 ");
-	Serial.println(Volts2);
+// A function to get the Ntp Time. This is used to make sure that the data
+// points recorded by the arduino are referenced to some meaningful time
+// which in our case is UTC represented as unix time (choosen because it 
+// works simply with highcharts without too much unecessary computation).
+unsigned long getTime() {
+	sendNTPpacket(timeServer); // send an NTP packet to a time server
 
-	switch (relay)
-	{
-	case 0:
-		digitalWrite(Relay1, (stat ? HIGH : LOW));
-		digitalWrite(Relay2, (stat ? HIGH : LOW));
-		digitalWrite(Relay3, (stat ? HIGH : LOW));
-		digitalWrite(Relay4, (stat ? HIGH : LOW));
-		break;
-	case 1:
-		digitalWrite(Relay1, (stat ? HIGH : LOW));
-		break;
-	case 2:
-		digitalWrite(Relay2, (stat ? HIGH : LOW));
-		break;
-	case 3:
-		digitalWrite(Relay3, (stat ? HIGH : LOW));
-		break;
-	case 4:
-		digitalWrite(Relay4, (stat ? HIGH : LOW));
-		break;
-	default:
-		break;
+							   // wait to see if a reply is available
+	delay(1000);
+	if (Udp.parsePacket()) {
+		// We've received a packet, read the data from it
+		Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read the packet into the buffer
+
+												  //the timestamp starts at byte 40 of the received packet and is four bytes,
+												  // or two words, long. First, esxtract the two words:
+
+		unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+		unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+		// combine the four bytes (two words) into a long integer
+		// this is NTP time (seconds since Jan 1 1900):
+		unsigned long secsSince1900 = highWord << 16 | lowWord;
+		// Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+		const unsigned long seventyYears = 2208988800UL;
+		// subtract seventy years:
+		unsigned long epoch = secsSince1900 - seventyYears;
+		// return Unix time:
+		return epoch;
 	}
-
-
-	relaysEnabled[relay - 1] = stat;
 }
 
-bool isRelayActivated(int relay)
-{
-	return relaysEnabled[relay - 1];
+// send an NTP request to the time server at the given address,
+// necessary for getTime().
+unsigned long sendNTPpacket(IPAddress& address) {
+
+	// set all bytes in the buffer to 0
+	memset(packetBuffer, 0, NTP_PACKET_SIZE);
+	// Initialize values needed to form NTP request
+	// (see URL above for details on the packets)
+	packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+	packetBuffer[1] = 0;     // Stratum, or type of clock
+	packetBuffer[2] = 6;     // Polling Interval
+	packetBuffer[3] = 0xEC;  // Peer Clock Precision
+							 // 8 bytes of zero for Root Delay & Root Dispersion
+	packetBuffer[12] = 49;
+	packetBuffer[13] = 0x4E;
+	packetBuffer[14] = 49;
+	packetBuffer[15] = 52;
+
+	// all NTP fields have been given values, now
+	// you can send a packet requesting a timestamp:         
+	Udp.beginPacket(address, 123); //NTP requests are to port 123
+	Udp.write(packetBuffer, NTP_PACKET_SIZE);
+	Udp.endPacket();
 }
 
-void setInputFlags() {
-	for (int i = 0; i < numOfInputs; i++) {
-		int reading = digitalRead(inputPins[i]);
-		if (reading != lastInputState[i]) {
-			lastDebounceTime[i] = millis();
-		}
-		if ((millis() - lastDebounceTime[i]) > debounceDelay) {
-			if (reading != inputState[i]) {
-				inputState[i] = reading;
-				if (inputState[i] == HIGH) {
-					inputFlags[i] = HIGH;
+
+// How big our line buffer should be for sending the files over the ethernet.
+// 75 has worked fine for me so far.
+#define BUFSIZ 75
+
+void loop() {
+	if ((millis() % lastIntervalTime) >= MEASURE_INTERVAL) { //Is it time for a new measurement?
+
+		char dataString[20] = "";
+		int count = 0;
+		unsigned long rawTime;
+		rawTime = getTime();
+
+		while ((rawTime == 39) && (count < 12)) {     //server seems to send 39 as an error code
+			delay(5000);                              //we want to retry if this happens. I chose
+			rawTime = getTime();                      //12 retries because I'm stubborn/persistent.
+			count += 1;                               //NIST considers retry interval of <4s as DoS
+		}                                           //attack, so fair warning.
+
+		if (rawTime != 39) {                         //If that worked, and we have a real time
+
+													 //Decide if it's time to make a new file or not. Files are broken
+													 //up like this to keep loading times for each chart bearable.
+													 //Lots of string stuff happens to make a new filename if necessary.
+			if (rawTime >= config.newFileTime) {
+				int dayInt = day(rawTime);
+				int monthInt = month(rawTime);
+				int yearInt = year(rawTime);
+				char newFilename[18] = "";
+				char dayStr[3];
+				char monthStr[3];
+				char yearStr[5];
+				char subYear[3];
+				strcat(newFilename, "data/");
+				itoa(dayInt, dayStr, 10);
+				if (dayInt < 10) {
+					strcat(newFilename, "0");
 				}
+				strcat(newFilename, dayStr);
+				strcat(newFilename, "-");
+				itoa(monthInt, monthStr, 10);
+				if (monthInt < 10) {
+					strcat(newFilename, "0");
+				}
+				strcat(newFilename, monthStr);
+				strcat(newFilename, "-");
+				itoa(yearInt, yearStr, 10);
+				//we only want the last two digits of the year
+				memcpy(subYear, &yearStr[2], 3);
+				strcat(newFilename, subYear);
+				strcat(newFilename, ".csv");
+
+				//make sure we update our config variables:
+				config.newFileTime += FILE_INTERVAL;
+				strcpy(config.workingFilename, newFilename);
+				//Write the changes to EEPROM. Bad things may happen if power is lost midway through,
+				//but it's a small risk we take. Manual fix with EEPROM_config sketch can correct it.
+				EEPROM_writeAnything(0, config);
+			}
+
+			//get the values and setup the string we want to write to the file
+			int sensor = analogRead(analogPin);
+			char timeStr[12];
+			char sensorStr[6];
+
+			ultoa(rawTime, timeStr, 10);
+			itoa(sensor, sensorStr, 10);
+
+			strcat(dataString, timeStr);
+			strcat(dataString, ",");
+			strcat(dataString, sensorStr);
+
+			//open the file we'll be writing to.
+			File dataFile = SD.open(config.workingFilename, FILE_WRITE);
+
+			// if the file is available, write to it:
+			if (dataFile) {
+				dataFile.println(dataString);
+				dataFile.close();
+				// print to the serial port too:
+				Serial.println(dataString);
+			}
+			// if the file isn't open, pop up an error:
+			else {
+				Serial.println("Error opening datafile for writing");
 			}
 		}
-		lastInputState[i] = reading;
-	}
-}
-
-void resolveInputFlags() {
-	for (int i = 0; i < numOfInputs; i++) {
-		if (inputFlags[i] == HIGH) {
-			inputAction(i);
-			inputFlags[i] = LOW;
-			printScreen();
-		}
-	}
-}
-
-void inputAction(int input) {
-	if (input == 0) {
-		if (currentScreen == 0) {
-			currentScreen = numOfScreens - 1;
-		}
 		else {
-			currentScreen--;
+			Serial.println("Couldn't resolve a time from the Ntp Server.");
 		}
+		//Update the time of the last measurment to the current timer value
+		lastIntervalTime = millis();
 	}
-	else if (input == 1) {
-		if (currentScreen == numOfScreens - 1) {
-			currentScreen = 0;
-		}
-		else {
-			currentScreen++;
-		}
-	}
-	else if (input == 2) {
-		parameterChange(0);
-	}
-	else if (input == 3) {
-		parameterChange(1);
-	}
-}
+	//No measurements to be made, make sure the webserver is available for connections.
+	else {
+		char clientline[BUFSIZ];
+		int index = 0;
 
-void parameterChange(int key) {
-	if (key == 0) {
-		parameters[currentScreen]++;
-	}
-	else if (key == 1) {
-		parameters[currentScreen]--;
-	}
-}
-void printScreen() {
+		EthernetClient client = server.available();
+		if (client) {
+			// an http request ends with a blank line
+			boolean current_line_is_blank = true;
 
-	lcd.clear();
-	lcd.print(screens[currentScreen][0]);
-	lcd.setCursor(0, 1);
-	lcd.print(parameters[currentScreen]);
-	lcd.print(" ");
-	lcd.print(screens[currentScreen][1]);
+			// reset the input buffer
+			index = 0;
 
-}
+			while (client.connected()) {
+				if (client.available()) {
+					char c = client.read();
 
-//--------------------------------------------------
-//send the power info to the ESP module through Serial1 (comma separated and starting with *)
-void sendPowerInfo(double VoltsL1, double VoltsL2, double Amps, double Watts) {
+					// If it isn't a new line, add the character to the buffer
+					if (c != '\n' && c != '\r') {
+						clientline[index] = c;
+						index++;
+						// are we too big for the buffer? start tossing out data
+						if (index >= BUFSIZ)
+							index = BUFSIZ - 1;
 
-	parameters[0] = DC_VOLT1;
-	parameters[1] = DC_VOLT2;
-	parameters[2] = CURRENT_CAL1;
-	parameters[3] = CURRENT_CAL2;
-	parameters[4] = CURRENT_CAL3;
-	parameters[5] = CURRENT_CAL4;
-	parameters[6] = VOLT_CAL1;
-	parameters[7] = VOLT_CAL2;
-	parameters[8] = 46;
-	parameters[9] = 46;
-	parameters[10] = 46;
-	parameters[11] = 46;
-	parameters[12] = 8;
-	parameters[13] = 8;
-	parameters[14] = 8;
-	parameters[15] = 8;
-	parameters[16] = 20;
-	parameters[17] = 6;
-	parameters[18] = 1000;
-	parameters[19] = now.month();
-	parameters[20] = now.date();
-	parameters[21] = now.dayOfWeek();
-	parameters[22] = now.year();
-	parameters[23] = now.hour();
-	parameters[24] = now.minute();
-	parameters[25] = now.second();
-
-	readValueB1 = analogRead(batPen1);
-	readValueB2 = analogRead(batPen2);
-	readValueC = analogRead(CloudsValue);
-	readValueR = analogRead(rainValue);
-	Voltage1 = (208. / 1023.)*readValueB1;
-	Voltage2 = (208. / 1023.)*readValueB2;
-	RainV = readValueR;
-	CloudsV = readValueC;
-	Volts1 = VoltsL1;
-	Volts2 = VoltsL2;
-
-	//delay(5000);
-
-	// Stops operation, if the Clouds value is too high.
-	if (CloudsV <= 100)
-	{
-		Serial.println("Ouch, it burns, I don't like the sun!");
-		setStatusOfRelay(0, false);
-		return;
-	}
-
-	// Stops operation, if its raining.
-	if (RainV <= 100)
-	{
-		Serial.println("Ew, it's raining.");
-		setStatusOfRelay(0, false);
-		return;
-	}
-
-	if (now.hour() >= 20)
-		// if(Voltage1 < 47)
-	{
-		{
-			setStatusOfRelay(0, false);
-		}
-	}
-	else
-	{
-		if (((Amps)< 800) && (Voltage1)< 44 && now.hour() >= 5)
-
-		{
-			setStatusOfRelay(1, true);
-		}
-		else
-		{
-			setStatusOfRelay(1, false);
-		}
-
-		if (((Amps)< 800) && (Voltage1)< 44 && now.hour() >= 5)
-		{
-			setStatusOfRelay(2, true);
-		}
-		else
-		{
-			setStatusOfRelay(2, false);
-		}
-
-		if (((Amps)< 8) && (Voltage1)< 44 && now.hour() >= 5)
-		{
-			setStatusOfRelay(3, true);
-		}
-		else
-		{
-			setStatusOfRelay(3, false);
-		}
-
-		if (((Amps)< 8) && (Voltage1)< 44 && now.hour() >= 5)
-		{
-			setStatusOfRelay(4, true);
-		}
-		else
-		{
-			setStatusOfRelay(4, false);
-		}
-	}
-
-	/*
-	//lcd.begin(16, 2);              // start the library
-	lcd.setCursor(0,0);
-	lcd.print(' ');
-	lcd.print("POWER WALL"); // print a simple message
-	lcd.print(' ');
-	lcd.print(weekDay[now.dayOfWeek()]); // print a simple message
-	lcd.setCursor(0,1);
-	lcd.print(now.hour(), DEC);
-	lcd.print(":");
-	lcd.print(now.minute(), DEC);
-	//lcd.print(":");
-	//lcd.print(now.second(), DEC);
-	lcd.print(' ');
-	lcd.print(now.month(), DEC);
-	lcd.print('/');
-	lcd.print(now.date(), DEC);
-	lcd.print('/');
-	lcd.print(now.year(), DEC);
-	delay(2000);
-
-	lcd.clear( );
-	lcd.setCursor(0,0);
-	lcd.print(' ');
-	lcd.print(' ');
-	lcd.print(' ');
-	lcd.print(' ');
-	lcd.print("Bat"); // print a simple message
-	lcd.print(' ');
-	lcd.print(Voltage1);
-	lcd.setCursor(0,1);
-	lcd.print("InverterAmp");
-	lcd.print(' ');
-	lcd.print(Amps );
-	delay(2000);
-
-	lcd.clear( );
-	lcd.setCursor(0,0);
-	lcd.print(' ');
-	lcd.print(' ');
-	lcd.print("Watts"); // print a simple message
-	lcd.print(' ');
-	lcd.print(Watts);
-	lcd.setCursor(0,1);
-	lcd.print("L1");
-	lcd.print(' ');
-	lcd.print(Volts1 );
-	lcd.print(' ');
-	lcd.print("L2");
-	lcd.print(' ');
-	lcd.print(Volts2 );
-	delay(2000);
-
-	lcd.clear( );
-	lcd.setCursor(0,0);
-	lcd.print("Relay ");
-	lcd.setCursor(6,0);
-	lcd.print("1");
-	lcd.setCursor(11,0);
-	lcd.print("2");
-	//lcd.setCursor(12,0);
-	lcd.setCursor(0,1);
-	lcd.print("Relay");
-	lcd.setCursor(6,1);
-	lcd.print("3");
-	lcd.setCursor(11,1);
-	lcd.print("4");
-	//lcd.setCursor(12,1);
-	if (isRelayActivated(1)) {
-	lcd.setCursor(8,0);
-	lcd.print("ON");
-	} else {
-	lcd.setCursor(8,0);
-	lcd.print("OFF");
-	}
-	if (isRelayActivated(2)) {
-	lcd.setCursor(13,0);
-	lcd.print("ON");
-	} else {
-	lcd.setCursor(13,0);
-	lcd.print("OFF");
-	}
-	if (isRelayActivated(3)) {
-	lcd.setCursor(8,1);
-	lcd.print("ON");
-	} else {
-	lcd.setCursor(8,1);
-	lcd.print("OFF");
-	}
-	if (isRelayActivated(4)) {
-	lcd.setCursor(13,1);
-	lcd.print("ON");
-	} else {
-	lcd.setCursor(13,1);
-	lcd.print("OFF");
-	return;
-	////delay(60000);
-	*/
-
-	// listen for incoming clients
-	/*EthernetClient client = server.available();
-	if (client) {
-		Serial.println("new client");
-		// an http request ends with a blank line
-		boolean currentLineIsBlank = true;
-		while (client.connected()) {
-			if (client.available()) {
-				char c = client.read();
-				Serial.write(c);
-				// if you've gotten to the end of the line (received a newline
-				// character) and the line is blank, the http request has ended,
-				// so you can send a reply
-				if (c == '\n' && currentLineIsBlank) {
-					// send a standard http response header
-					client.println("HTTP/1.1 200 OK");
-					client.println("Content-Type: text/html");
-					client.println("Connection: close");  // the connection will be closed after completion of the response
-					client.println("Refresh: 5");  // refresh the page automatically every 5 sec
-					client.println();
-					client.println("<!DOCTYPE HTML>");
-					client.println("<html>");
-					// output the value of each analog input pin
-					for (int analogChannel = 0; analogChannel < 6; analogChannel++) {
-						int sensorReading = analogRead(analogChannel);
-						client.print("analog input ");
-						client.print(analogChannel);
-						client.print(" is ");
-						client.print(sensorReading);
-						client.println("<br />");
+						// continue to read more data!
+						continue;
 					}
-					client.println("</html>");
+
+					// got a \n or \r new line, which means the string is done
+					clientline[index] = 0;
+
+					// Print it out for debugging
+					Serial.println(clientline);
+
+					// Look for substring such as a request to get the root file
+					if (strstr(clientline, "GET / ") != 0) {
+						// send a standard http response header
+						HtmlHeaderOK(client);
+						// print all the data files, use a helper to keep it clean
+						client.println("<h2>View data for the week of (dd-mm-yy):</h2>");
+						ListFiles(client);
+					}
+					else if (strstr(clientline, "GET /") != 0) {
+						// this time no space after the /, so a sub-file!
+						char *filename;
+
+						filename = strtok(clientline + 5, "?"); // look after the "GET /" (5 chars) but before
+																// the "?" if a data file has been specified. A little trick, look for the " HTTP/1.1"
+																// string and turn the first character of the substring into a 0 to clear it out.
+						(strstr(clientline, " HTTP"))[0] = 0;
+
+						// print the file we want
+						Serial.println(filename);
+						File file = SD.open(filename, FILE_READ);
+						if (!file) {
+							HtmlHeader404(client);
+							break;
+						}
+
+						Serial.println("Opened!");
+
+						HtmlHeaderOK(client);
+
+						while (file.available()) {
+							int num_bytes_read;
+							uint8_t byte_buffer[32];
+
+							num_bytes_read = file.read(byte_buffer, 32);
+							client.write(byte_buffer, num_bytes_read);
+						}
+						file.close();
+					}
+					else {
+						// everything else is a 404
+						HtmlHeader404(client);
+					}
 					break;
 				}
-				if (c == '\n') {
-					// you're starting a new line
-					currentLineIsBlank = true;
-				}
-				else if (c != '\r') {
-					// you've gotten a character on the current line
-					currentLineIsBlank = false;
-				}
 			}
+			// give the web browser time to receive the data
+			delay(1);
+			client.stop();
 		}
-		// give the web browser time to receive the data
-		delay(1);
-		// close the connection:
-		client.stop();
-		Serial.println("client disconnected");
 	}
-	*/
 }
-//}
